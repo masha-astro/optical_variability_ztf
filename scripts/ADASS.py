@@ -9,27 +9,73 @@ from matplotlib.backends.backend_pdf import PdfPages
 import glob
 from tqdm import tqdm as tqdm
 from tqdm.auto import tqdm
-from fpdf import FPDF
-import PIL
-from PIL import Image
 import scipy.integrate
 from scipy.stats import chi2
 from scipy.stats import sigmaclip
-from make_ts_plot_upd import iau_object_name
 from astropy.io import fits
 from astroquery.vizier import Vizier
 import astropy.units as u
 import astropy.coordinates as coord
-from make_ts_plot_upd import object_coord
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 import astropy.units as u
 from astropy.time import Time
 from astropy.io import ascii
+import os
+import re
+from sklearn.gaussian_process.kernels import RBF, Matern, \
+RationalQuadratic, WhiteKernel, DotProduct, ConstantKernel as C
+import fulu
+from fulu import *
+from matplotlib.lines import Line2D
+import matplotlib.colors as mcolors
 import warnings
 warnings.filterwarnings('ignore')
 
 
-path_zeros = '{}zp_thresholds_quadID.txt'.format(os.getcwd())
+path_zeros = '{}/zp_thresholds_quadID.txt'.format(os.getcwd())
+'''Constants from 12 paragraph ZTF Forced Photometry Service manual'''
+SNU = 5
+SNT = 3
+markers = Line2D.markers
+passband2lam  = {'ZTF_r': 1, 'ZTF_g': 2}
+models_dict = {'BNN': bnn_aug.BayesianNetAugmentation(passband2lam),
+               'NF': nf_aug.NormalizingFlowAugmentation(passband2lam),
+               'NN (pytorch)': single_layer_aug.SingleLayerNetAugmentation(passband2lam),
+               'NN (sklearn)': mlp_reg_aug.MLPRegressionAugmentation(passband2lam),
+               'GP': gp_aug.GaussianProcessesAugmentation(passband2lam),
+               'GP C(1.0)*RBF([1.0, 1.0]) + Matern() + WhiteKernel()': gp_aug.GaussianProcessesAugmentation(passband2lam, C(1.0)*RBF([1.0, 1.0]) + Matern() + WhiteKernel(),  False),\
+               'GP C(1.0)*Matern() * RBF([1, 1]) + Matern() + WhiteKernel()': gp_aug.GaussianProcessesAugmentation(passband2lam, C(1.0)*Matern() * RBF([1, 1]) + Matern() + WhiteKernel())}
+
+def parse_file(file_path):
+    f = open(file_path, 'r')
+    ra_template = 'R.A.\s*=\s*(\d+.\d+)\s*degrees'
+    dec_template = 'Dec.\s*=\s*([-]*\d+.\d+)\s*degrees'
+    ra = np.nan
+    dec = np.nan
+    for l in f.readlines():
+        ra_res = re.findall(ra_template,l)
+        if len(ra_res) > 0:
+            ra = np.float(ra_res[0])
+        dec_res = re.findall(dec_template,l)
+        if len(dec_res) > 0:
+            dec = np.float(dec_res[0])
+    return {'ra': ra, 'dec': dec}
+    
+def iau_object_name(file_path):
+    parsed_pos = parse_file(file_path)
+    c = SkyCoord(parsed_pos['ra']*u.degree, parsed_pos['dec']*u.degree)
+    ra_p = c.ra.to_string(unit=u.hourangle, sep='', precision=2, pad=True)
+    dec_p = c.dec.to_string(sep='', precision=1, alwayssign=True, pad=True)
+    jname = 'J'+ra_p+dec_p
+    return jname
+
+def object_coord(file_path):
+    parsed_pos = parse_file(file_path)
+    c = SkyCoord(parsed_pos['ra']*u.degree, parsed_pos['dec']*u.degree)
+    ra_p = c.ra
+    dec_p = c.dec
+    return ra_p.deg, dec_p.deg
+
 def panstars_query(ra_deg, dec_deg, rad_deg, maxmag=27,
                     maxsources=10000):
     """
@@ -294,8 +340,9 @@ def compile_obj(t, flux, flux_err, passband):
     obj['passband'] = passband
     return obj
 
-def plot_lc(filter_data, color, outl=False):
-
+def plot_lc(filter_data, color, link, ax1, outl=False):
+    ra, dec = object_coord(link)
+    iau_name = iau_object_name(link)
     """Функция строит кривую блеска и
     гистограмму выборки зв.вел. нормированной 
     на корень оптимального значения дисперсии, 
@@ -326,7 +373,7 @@ def plot_lc(filter_data, color, outl=False):
         print("Min Fluxunctot ", np.nanmin(Fluxunctot))
 
     assert np.any(Fluxunctot is not np.nan)
-    assert np.any(Fluxunctot is not 0.0)
+    assert np.any(Fluxunctot != 0.0)
     print("В Fluxunctot есть nan: ", np.any(np.isnan(Fluxunctot)))
 
     print("Есть в Fluxtot inf ", np.sum(np.isinf(Fluxtot)))
@@ -489,13 +536,13 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
     ax1.spines['right'].set_linewidth(7)
 
     iau_name_red, chi_norm_red, std_chi_norm_red, p_val_red, alph_red, N_red, x_r, y_r, s_r =\
-    plot_lc(red, 'red')
+    plot_lc(red, 'red', ax1=ax1, link=link)
     iau_name_red_, chi_norm_red_, std_chi_norm_red_, p_val_red_, alph_red_, N_red_, x_r_, y_r_, s_r_ =\
-    plot_lc(red_outl_end, 'red', outl = True)
+    plot_lc(red_outl_end, 'red', ax1=ax1, link=link, outl = True)
     iau_name_green, chi_norm_green, std_chi_norm_green, p_val_green, alph_green, N_green, x_g, y_g, s_g =\
-    plot_lc(green, 'green')
+    plot_lc(green, 'green', ax1=ax1, link=link)
     iau_name_green_, chi_norm_green_, std_chi_norm_green_, p_val_green_, alph_green_, N_green_, x_g_, y_g_, s_g_ =\
-    plot_lc(green_outl_end, 'green', outl = True)
+    plot_lc(green_outl_end, 'green', link=link, ax1=ax1, outl = True)
     if make_fulu:
 
         '''FULU'''
