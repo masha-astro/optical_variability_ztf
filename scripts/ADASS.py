@@ -5,13 +5,11 @@ import matplotlib.pyplot as plt
 import scipy
 from scipy import stats
 from scipy.optimize import curve_fit
-from matplotlib.backends.backend_pdf import PdfPages
 import glob
 from tqdm import tqdm as tqdm
 from tqdm.auto import tqdm
 import scipy.integrate
 from scipy.stats import chi2
-from scipy.stats import sigmaclip
 from astropy.io import fits
 from astroquery.vizier import Vizier
 import astropy.units as u
@@ -198,13 +196,13 @@ def pre(df, ra, dec):
 
 def filtering(df):
     
-    '''Фильтрую по параметру infobitssci'''
+    '''Filtering by parameter infobitssci'''
     mask_inf = df['infobitssci,'] == 0
     
-    '''Пункт 8 (g) - расстояние до ближайшего референса устанавливается < 1'' '''
+    '''Paragraph 8 (g) - the distance to the nearest reference is set < 1'' '''
     mask_dref = df['dnearestrefsrc,'] < 1
     
-    '''Размер референса устанавливается от -0.1 до 0.884'' '''
+    '''The size of the reference is set from -0.1 to 0.884'' '''
     mask_shref = (df['nearestrefsharp,'] < 0.884)&(df['nearestrefsharp,'] > -0.1)
     
     '''Chi parameter for nearestrefmag(ratio: RMS in PSF-fit residuals / expected RMS from priors)'''
@@ -234,7 +232,7 @@ def noise_filtering(df_i):
 
 def cleaning(df_i):
     
-    '''Очищение по критерию из дата-релиза ZTF'''
+    '''Cleaning data points according to the criterion from the ZTF data release'''
     if len(df_i) == 0:
         return df_i, None
     else:
@@ -307,11 +305,11 @@ def chi_2(mean_weight_magnitude, error, magnitude):
 def bootstrap_estimate_mean_stddev(arr, n_samples=1000):
     np.random.seed(0)
     arr = np.array(arr)
-    print("Длина изначального вектора хи-квадратов ", len(arr))
+    print("The length of the original chi-squared vector ", len(arr))
     bs_samples = np.random.randint(0, len(arr), size=(n_samples, len(arr)))
     bs_samples = np.nanmean(arr[bs_samples], axis=1)
     sigma = np.sqrt(np.nansum((bs_samples - np.nanmean(bs_samples))**2) / (n_samples - 1))
-    print("Длина бутстрап-вектора ", len(bs_samples))
+    print("The length of bootstrap vectors of chi-squares ", len(bs_samples))
     return np.nanmean(bs_samples), sigma
 
 def chi_2_norm(mean_weight_magnitude, error, magnitude):
@@ -376,20 +374,21 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
     ra, dec = object_coord(link)
     iau_name = iau_object_name(link)
 
-    """Тут идут формулы из 13 раздела инструкции"""
+    """Formulas from the instruction ZTF Forced Photometry 13 paragraph"""
 
     nearestrefflux = 10**(0.4*(filter_data['zpdiff,'].values - filter_data['nearestrefmag,'].values))
     nearestreffluxunc = filter_data['nearestrefmagunc,'].values * nearestrefflux / 1.0857
-    print("В forcediffimfluxunc есть nan: ", \
+    print("In the forcediffimfluxunc exists nan: ", \
           np.any(np.isnan(filter_data['forcediffimfluxunc,'].values)), \
-          "В nearestreffluxunc есть nan: ",np.any(np.isnan(nearestreffluxunc)))
+          "In the nearestreffluxunc exists nan: ",np.any(np.isnan(nearestreffluxunc)))
     Fluxtot = filter_data['forcediffimflux,'].values + nearestrefflux
     Fluxunctot = np.sqrt(filter_data['forcediffimfluxunc,'].values**2 - nearestreffluxunc**2)
 
-    print("Длина Fluxunctot ", len(Fluxunctot))
+    print("Length Fluxunctot ", len(Fluxunctot))
 
-    """Если в Fluxunctot есть nan, беру корень из разности квадратов, 
-    так величина ошибки будет определена"""
+    """if there is nan in Fluxunctot, 
+    I take the root of the difference of squares,
+    so the error value will be determined"""
 
     Fluxunctot[np.isnan(Fluxunctot)] = \
     np.sqrt(np.nanvar(filter_data['forcediffimfluxunc,'].values[np.isnan(Fluxunctot)] \
@@ -401,14 +400,13 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
 
     assert np.any(Fluxunctot is not np.nan)
     assert np.any(Fluxunctot != 0.0)
-    print("В Fluxunctot есть nan: ", np.any(np.isnan(Fluxunctot)))
+    print("In the Fluxunctot exists nan: ", np.any(np.isnan(Fluxunctot)))
 
-    print("Есть в Fluxtot inf ", np.sum(np.isinf(Fluxtot)))
+    print("In the Fluxtot exists inf ", np.sum(np.isinf(Fluxtot)))
     SNRtot = Fluxtot / Fluxunctot
 
 
-    """Условие из инструкции, там в 13 пункте это if\else, 
-    но тут проще было сделать mask==True и mask==False""" 
+    """Condition from the instruction ZTF Forced Photometry 13 paragraph""" 
 
     mask = SNRtot > SNT
     # we have a “confident” detection, compute and plot mag with error bar:
@@ -418,7 +416,7 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
     sigma_mag = 1.0857 / SNRtot[mask]
     ccdQuadId_list = filter_data['CCDquadID,'].values[mask]
 
-    """Коррректировка цвета"""
+    """Color correction"""
 
     try:
         pans_df = panstars_query(ra, dec, 0.00041667).to_pandas()
@@ -426,17 +424,15 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
         mag, sigma_mag = color_correction(pans_df, clrcoeff, clrcoeffunc, mag, sigma_mag)
 
     except IndexError as e:
-        print('ЦВЕТОВАЯ КОРРЕКЦИЯ НЕ ПРОВЕДЕНА')
+        print('COLOR CORRECTION HAS NOT BEEN PERFORMED')
 
-    print("Есть inf в SNRtot", np.sum(np.isinf(SNRtot[mask])))
+    print("Exist inf in the SNRtot", np.sum(np.isinf(SNRtot[mask])))
 
     sigma_mag = sigma_mag
     x = filter_data['jd,'].values[mask] - 2400000.5
     y = mag
     median_y = np.nanmedian(y)
-    print("Медиана выборки = {}".format(median_y))
-
-    print("Количество выбросов, которые отметаем ", len(x) - len(x))
+    print("Median of the sample magnitude = {}".format(median_y))
 
     y_weight = np.array([weight_mean(y, sigma_mag) \
                         for i in range(len(x))]) 
@@ -478,25 +474,55 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
                              r' $\chi^2$ {}$\pm${}'.format(chi_norm,std_chi_norm),
                          markerfacecolor = list_clr[cm+1], ls='none')
 
-    print("Количество nan в sigma ", np.sum(np.isnan(sigma_mag)))
+    print("Number of nan in the errors ", np.sum(np.isnan(sigma_mag)))
     chii = chi_2(y_weight, sigma_mag, y)
 
     N = len(y) - \
           np.isnan(sigma_mag[~np.isnan(y)]).sum() - \
           np.isnan(y).sum()
-    print("Подсчёт p_value ведётся по chi2 = ", chii)
+    print("Counting p_value conducted by value chi2 = ", chii)
     p_val, alph = p_value_compare(chii, N)
-    print("Взвешенное среднее кол-во nan", np.sum(np.isnan(y_weight)))
+    print("Number of nan in the error-weighted average of magnitude", np.sum(np.isnan(y_weight)))
     chi_norm_without_bootstr,chi_norm, std_chi_norm = \
         chi_2_norm(y_weight, sigma_mag, y)
     print("Chi_without_bootstr = ", chi_norm_without_bootstr)
     print(iau_name, " Chi_norm_", color[0], " = ", chi_norm, " +- ", std_chi_norm)
-    print("Количество точек N = ", N)
+    print("Number of points N = ", N)
 
     return iau_name, chi_norm, std_chi_norm, p_val, alph, N, x, y, sigma_mag 
 
 
 def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, make_11 = True, save_format=None):
+    '''
+    Parameters:
+    -----------
+    link: str
+    Path link on light curve txt file
+    
+    make_fulu: bool
+    Flag True mean that FULU approximation tool work
+    
+    model_name:
+    Name of FULU approximation model (it can be from model_dict, which you can set)
+    For example:
+    models_dict = {'BNN': bnn_aug.BayesianNetAugmentation(passband2lam),
+               'NF': nf_aug.NormalizingFlowAugmentation(passband2lam),
+               'NN (pytorch)': single_layer_aug.SingleLayerNetAugmentation(passband2lam),
+               'NN (sklearn)': mlp_reg_aug.MLPRegressionAugmentation(passband2lam),
+               'GP': gp_aug.GaussianProcessesAugmentation(passband2lam),
+               'GP C(1.0)*RBF([1.0, 1.0]) + Matern() + WhiteKernel()': gp_aug.GaussianProcessesAugmentation(passband2lam, C(1.0)*RBF([1.0, 1.0]) + Matern() + WhiteKernel(),  False),
+               'GP C(1.0)*Matern() * RBF([1, 1]) + Matern() + WhiteKernel()': gp_aug.GaussianProcessesAugmentation(passband2lam, C(1.0)*Matern() * RBF([1, 1]) + Matern() + WhiteKernel())}
+    You can set another kernel and pararmeters in GP model, also you can use errors from your data for GP model
+    
+    make_8_i: bool
+    Flag True mean that 8 Paragraph from ZTF Forced Photometry instruction work
+    
+    make_11: bool
+    Flag True mean that 11 Paragraph from ZTF Forced Photometry instruction work
+    
+    save_format: str
+    Format name of your graph (.png, .svg, .pdf ...)
+    '''
     
     iau_name = iau_object_name(link)
     ra, dec = object_coord(link)
@@ -516,11 +542,11 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
     red = df[df['filter,'] == 'ZTF_r']
     green = df[df['filter,'] == 'ZTF_g']
 
-    '''Очищение по критерию из дата-релиза ZTF'''
+    '''Cleaning data according to the criterion from the ZTF data release'''
     
-    red, red_outl1 = filtering(red) #очищает по критериям из инструкции самого сервиса
-    green, green_outl1 = filtering(green) # очищает по критериям из инструкции самого сервиса
-    print(len(red), len(green))
+    red, red_outl1 = filtering(red) 
+    green, green_outl1 = filtering(green)
+    
     if (len(red) < 3)&(len(green) < 3):
         return None
     
@@ -532,7 +558,7 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
         red, red_outl3 = noise_filtering(red)
         green, green_outl3 = noise_filtering(green)
     
-    '''В инструкции пункт про домножение ошибок на корень из хи-квадрат'''
+    '''In the ZTF Forced Photometry instruction 11 paragraph about multiplying errors by the root of chi-square'''
     if make_11:
         for field in df['field,'].unique():
 
@@ -636,7 +662,7 @@ def make_fits(input_files, fits_name, make_latex=False):
     alph_greens = []
     N_greens = []
 
-    for ff in input_files:
+    for ff in tqdm(input_files):
         try:
             print(ff)
             iau_name, chi_norm_red, std_chi_norm_red, p_val_red, \
