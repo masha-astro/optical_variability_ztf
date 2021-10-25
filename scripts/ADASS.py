@@ -142,7 +142,7 @@ def ccdquad_ID(df):
         for qid in df['qid,'].unique():
             
             df['CCDquadID,'][(df['ccdid,'] == ccdid)&(df['qid,'] == qid)]=4*(ccdid-1)+qid
-    print("Уникальные значения CCDquadID ",df['CCDquadID,'].unique())
+    print("Unique values of the light curve CCD quadrants (CCDquadID) ",df['CCDquadID,'].unique())
     return df
 
 def zpthres (df, path):
@@ -174,7 +174,7 @@ def proc_pars(df):
     assert len(val) == len(df['procstatus'].values)
     df['procstatus'] = val
     
-    '''Пункт 8 (h) - procstatus = 0 (succes), 62, 65(input data problems)'''
+    '''Paragraph 8 (h) - procstatus = 0 (succes), 62, 65(input data problems)'''
     
     df = df[(df['procstatus'] == 0)|(df['procstatus'] == 62)|(df['procstatus'] == 65)]
     
@@ -182,15 +182,15 @@ def proc_pars(df):
 
 def pre(df, ra, dec):
     
-    '''Формирую колонку с номером куска матрицы'''
+    '''Form a column with the number of the CCD quadrant'''
     
     df = ccdquad_ID(df)
     
-    '''Формируем колонку с airmass'''
+    '''Form a column with the airmass'''
     
     df = airmass(df, ra, dec)
     
-    '''Формируем колонку с zero points'''
+    '''Form a column with the zero points'''
     
     df = zpthres(df, path_zeros)
     
@@ -269,13 +269,24 @@ def cleaning(df_i):
 
         return df_i, df_i_outl
 
-def check_statistic(y_i, y_opt_chi, sig): 
-    # y_i-выборка уже почищенная от выбросов и точек с большими ошибками
-
-    """Сравниваю значение статистики являющейся 
-    суммой квадратов стандратных случайных величин 
-    и альфа-квантиль распределения хи-квадрат 
-    со степенями свободы количество точек - 3"""
+def check_statistic(y_i, y_opt_chi, sig):
+    '''
+    The value of statistics is compared, 
+    which is the sum of the squares of standard random variables
+    and the alpha quantile of the chi-square distribution with 
+    degrees of freedom the number of points minus 2
+    
+    Parameters:
+    -----------
+    y_i: list or np.array
+    filtered magnitudes
+    
+    y_opt_chi: list or np.array
+    Error-weighted mean of stellar magnitude
+    
+    sig: list or np.array
+    Errors of stellar magnitudes
+    '''
 
     statistic = np.nansum((y_i - y_opt_chi)**2/sig)
 
@@ -297,12 +308,10 @@ def bootstrap_estimate_mean_stddev(arr, n_samples=1000):
     np.random.seed(0)
     arr = np.array(arr)
     print("Длина изначального вектора хи-квадратов ", len(arr))
-    print(np.sum(np.isnan(arr)))
     bs_samples = np.random.randint(0, len(arr), size=(n_samples, len(arr)))
     bs_samples = np.nanmean(arr[bs_samples], axis=1)
     sigma = np.sqrt(np.nansum((bs_samples - np.nanmean(bs_samples))**2) / (n_samples - 1))
     print("Длина бутстрап-вектора ", len(bs_samples))
-    print(np.sum(np.isnan(bs_samples)))
     return np.nanmean(bs_samples), sigma
 
 def chi_2_norm(mean_weight_magnitude, error, magnitude):
@@ -341,13 +350,31 @@ def compile_obj(t, flux, flux_err, passband):
     return obj
 
 def plot_lc(filter_data, color, link, ax1, outl=False):
+    '''
+    Calculation of chi-square statistics (based on the chi-square distribution).
+    Construction of the light curve and calculation of the normalized chi-square
+    (in the legend) by points from each CCD quadrant.
+    
+    Parameters:
+    -----------
+    filter_data: astropy.Table or pandas.DataFrame
+    Filtered dataFrame light curve
+    
+    color: str
+    Matplotlib color for filter
+    
+    link: str
+    Path link on light curve txt file
+    
+    ax1: matplotlib.plot.Axes object
+    Your subplot in your figure
+    
+    outl: bool
+    If flag is True, outliers are builded on the light curve with star markers
+    '''
+    
     ra, dec = object_coord(link)
     iau_name = iau_object_name(link)
-    """Функция строит кривую блеска и
-    гистограмму выборки зв.вел. нормированной 
-    на корень оптимального значения дисперсии, 
-    а также вычитая среднее значение, 
-    таким образом получаются стандратные нормальные величины"""
 
     """Тут идут формулы из 13 раздела инструкции"""
 
@@ -466,25 +493,25 @@ def plot_lc(filter_data, color, link, ax1, outl=False):
     print(iau_name, " Chi_norm_", color[0], " = ", chi_norm, " +- ", std_chi_norm)
     print("Количество точек N = ", N)
 
-    return iau_name, chi_norm, std_chi_norm, p_val, alph, N, x, y,sigma_mag 
+    return iau_name, chi_norm, std_chi_norm, p_val, alph, N, x, y, sigma_mag 
 
 
-def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, make_11 = True, save=False):
+def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, make_11 = True, save_format=None):
     
     iau_name = iau_object_name(link)
     ra, dec = object_coord(link)
     
-    '''Считываю txt файл без закомменченных строк'''
+    '''A txt file is read without commenedlines'''
     
     df = pd.read_csv(link, sep=' ', comment='#')
     df = df.drop('Unnamed: 0', 1)
-    df = proc_pars(df) # очищает от проблемных output с самого сервиса
+    df = proc_pars(df) # clears the problematic output from the Forced Photometry Service service
     print(len(df))
     if len(df) < 3:
         return None
-    df = pre(df, ra, dec) #формируются колонки для проверки критерия из dr ztf
+    df = pre(df, ra, dec) # columns are formed to check the criteria from ztf data release
     
-    '''Делаю 2 дата-фрейма для разных фильтров'''
+    '''There are 2 data frames for different filters'''
 
     red = df[df['filter,'] == 'ZTF_r']
     green = df[df['filter,'] == 'ZTF_g']
@@ -500,7 +527,7 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
     red, red_outl2 = cleaning(red)
     green, green_outl2 = cleaning(green)
     
-    '''Пункт 8 (i) - zpmaginpsci, zpmaginpscirms, and/or scisigpix'''
+    '''Paragraph 8 (i) ZTF Forced Photometry instruction - zpmaginpsci, zpmaginpscirms, and/or scisigpix'''
     if make_8_i:
         red, red_outl3 = noise_filtering(red)
         green, green_outl3 = noise_filtering(green)
@@ -520,7 +547,8 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
 
     red_outl_end = pd.concat([red_outl1, red_outl2, red_outl3])
     green_outl_end = pd.concat([green_outl1, green_outl2, green_outl3])
-    '''Параметры осей и названий графиков'''
+    
+    '''Parameters of axes and graph names'''
 
     fig = plt.figure(figsize = (35,25), dpi=400)
     fig.subplots_adjust(left=0.13, right=0.98, top=0.91, bottom=0.1)
@@ -572,14 +600,29 @@ def check_and_plot(link, *, make_fulu=False, model_name = 'GP', make_8_i=True, m
     ax1.legend(*[*zip(*{l:h for h,l in zip(*ax1.get_legend_handles_labels())}.items())][::-1],
                prop={'size':35}, fontsize='x-large', loc=0, framealpha=0.55)
     
-    pathh = '/home/masha/ZTF/Mbh1Msun/adass_plots/' + iau_name + 'fulu_ADASS.svg'
-    if save:
-        fig.savefig(pathh)
+    pathh = os.getcwd() + iau_name
+    if save_format is not None:
+        fig.savefig(pathh + save_format)
     else:
         plt.show()
     return  iau_name_red, chi_norm_red, std_chi_norm_red, p_val_red, alph_red, N_red, chi_norm_green, std_chi_norm_green, p_val_green, alph_green, N_green
 
 def make_fits(input_files, fits_name, make_latex=False):
+    '''
+    Generate and save fits file with statisctics from light curves
+    
+    Parameters:
+    -----------
+    input_files: list or np.array
+    List of paths to ZTF Forced Photometry light curves
+    
+    fits_name: str
+    The name of the fits file
+    
+    make_latex: bool
+    The flag responsible for printing the Latex code of the table
+    and returning the dictionary with it
+    '''
     
     iau_names = []
     chi_norm_reds = []
